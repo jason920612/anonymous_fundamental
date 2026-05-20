@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local config overrides
+*.local.yaml
+.env
+.env.*
+
+# Data — never commit raw SEC dumps, yfinance caches, or processed parquets (too large + reproducible)
+data/raw/
+data/processed/
+data/processed_sectorrank/
+data/interim/
+data/feature_store/
+data/model_inputs/
+data/model_inputs_v50/
+data/backtest_outputs/
+
+# Artifacts — large trained model state and intermediate predictions; regeneratable
+artifacts/feature_encoder/
+artifacts/models/
+artifacts/predictions/
+artifacts/experiments/
+artifacts/hpo/
+artifacts/v50/
+
+# Reports — keep summary files, drop large per-day parquets at any depth
+**/daily.parquet
+**/holdings.parquet
+**/trades.parquet
+
+# Anything that accidentally gets dropped here
+*.log

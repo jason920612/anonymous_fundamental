@@ -1,0 +1,22 @@
+# Master config merged on experiment launch.
+# Individual phase configs may override sections below.
+
+project:
+  name: anonymous-fundamental-portfolio
+  random_seed: 42
+
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  model_inputs: data/model_inputs
+  feature_store: data/feature_store
+  artifacts: artifacts
+  reports: reports
+
+includes:
+  - data.yaml
+  - features.yaml
+  - target.yaml
+  - model.yaml
+  - portfolio.yaml
+  - backtest.yaml

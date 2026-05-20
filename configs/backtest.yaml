@@ -1,0 +1,13 @@
+backtest:
+  start_date: "2020-01-01"
+  end_date: null   # null = use last available date
+  initial_value: 1.0
+  benchmarks: ["SPY", "QQQ", "equal_weight_universe", "equal_risk_universe"]
+  trading_days_per_year: 252
+
+  robustness:
+    transaction_cost_bps_grid: [0, 5, 10, 25, 50]
+    execution_delay_grid: ["same_day_close", "next_day_close"]
+    max_weight_grid: [0.02, 0.05, 0.08]
+    target_positions_grid: [30, 50, 100]
+    signal_threshold_grid: [0.0, 0.05, 0.10]

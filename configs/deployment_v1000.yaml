@@ -1,0 +1,39 @@
+# 1000-CIK validation run (Phase 11).
+# Larger universe, broader-history splits, full walk-forward diagnostics.
+
+includes:
+  - default.yaml
+
+features:
+  periods_back: 8
+  min_company_count: 50         # real constraint with 1000-CIK universe
+  min_sample_coverage_pct: 1.0
+  max_missing_pct: 99.0
+
+model:
+  type: lightgbm
+  splits:
+    train_end_date: "2015-12-31"
+    validation_end_date: "2019-12-31"
+    test_start_date: "2020-01-01"
+
+target:
+  scale:
+    method: hybrid_daily_event
+    daily_vol_lookback_days: 252
+    event_vol_lookback_events: 8
+    min_event_history: 4
+
+backtest:
+  start_date: "2020-01-02"
+  end_date: null
+
+portfolio:
+  signal:
+    min_positive_signal: 0.05
+  positions:
+    min_positions: 20
+    target_positions: 50
+    max_positions: 100
+    max_single_stock_weight: 0.05
+    min_position_weight: 0.0025

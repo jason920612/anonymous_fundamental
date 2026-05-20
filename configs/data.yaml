@@ -1,0 +1,47 @@
+data:
+  sec:
+    base_url: "https://data.sec.gov"
+    company_tickers_url: "https://www.sec.gov/files/company_tickers.json"
+    user_agent: "anonymous-fundamental-portfolio research jasonya2206@gmail.com"
+    max_requests_per_second: 8
+    retry:
+      max_attempts: 5
+      backoff_seconds: [1, 2, 4, 8, 16]
+
+  prices:
+    source: yfinance        # yfinance | csv
+    csv_root: data/raw/prices
+    cache_root: data/raw/prices_cache
+    start_date: "2003-01-01"
+    end_date: null  # null = today
+    min_history_days: 252
+    request_pause_seconds: 0.5
+
+  benchmarks:
+    symbols: ["SPY", "QQQ"]
+
+  calendar:
+    market: XNYS
+    timezone: America/New_York
+
+  universe:
+    min_adjusted_close_price_usd: 5
+    min_avg_daily_dollar_volume_usd: 10000000
+    min_financial_report_events: 12
+    min_years_price_history: 5
+    exclude_etfs: true
+    exclude_funds: true
+    exclude_preferreds: true
+    include_financials: true
+
+  forms:
+    primary: ["10-Q", "10-K"]
+    include_amendments_as_events: false
+
+  # Phase 12: applied at sample-build time per RFC-01 §6.1.
+  sample_filter:
+    enabled: false
+    min_adjusted_close_price_usd: 5.0
+    min_avg_daily_dollar_volume_usd: 10000000.0
+    min_years_price_history: 3.0
+    avg_dollar_volume_lookback_days: 252

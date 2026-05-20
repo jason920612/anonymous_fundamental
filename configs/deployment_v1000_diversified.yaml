@@ -1,0 +1,35 @@
+# Phase 20: diversified portfolio (more positions, lower per-name cap).
+# Goal: get closer to equal-risk-active's diversification while still applying signal.
+
+includes:
+  - default.yaml
+
+features:
+  periods_back: 8
+  min_company_count: 50
+  min_sample_coverage_pct: 1.0
+  max_missing_pct: 99.0
+
+model:
+  type: ridge
+  splits:
+    train_end_date: "2015-12-31"
+    validation_end_date: "2019-12-31"
+    test_start_date: "2020-01-01"
+
+target:
+  k: 2.5
+
+backtest:
+  start_date: "2020-01-02"
+  end_date: null
+
+portfolio:
+  signal:
+    min_positive_signal: 0.0      # accept any positive signal
+  positions:
+    min_positions: 50
+    target_positions: 150         # more diversified
+    max_positions: 200
+    max_single_stock_weight: 0.02 # tighter per-name cap
+    min_position_weight: 0.001

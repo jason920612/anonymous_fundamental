@@ -1,0 +1,39 @@
+# Deployment override config — tunes feature filters and splits for the
+# 50-company live-data run. Merge order: includes go first, then this file's keys override.
+
+includes:
+  - default.yaml
+
+features:
+  periods_back: 8
+  min_company_count: 3
+  min_sample_coverage_pct: 0.1
+  max_missing_pct: 99.0
+
+model:
+  type: lightgbm
+  splits:
+    train_end_date: "2018-12-31"
+    validation_end_date: "2021-12-31"
+    test_start_date: "2022-01-01"
+
+target:
+  scale:
+    method: hybrid_daily_event
+    daily_vol_lookback_days: 252
+    event_vol_lookback_events: 8
+    min_event_history: 4
+
+backtest:
+  start_date: "2022-01-03"
+  end_date: null
+
+portfolio:
+  signal:
+    min_positive_signal: 0.0   # relaxed for the small universe
+  positions:
+    min_positions: 1
+    target_positions: 20
+    max_positions: 50
+    max_single_stock_weight: 0.20
+    min_position_weight: 0.0

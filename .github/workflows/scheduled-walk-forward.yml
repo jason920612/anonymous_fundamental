@@ -1,0 +1,53 @@
+name: scheduled-walk-forward
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_kind:
+        description: "Model kind (ridge / gbt / lightgbm)"
+        type: choice
+        default: ridge
+        options: [ridge, gbt, lightgbm, constant_zero, historical_mean]
+      limit_ciks:
+        description: "Number of CIKs to ingest"
+        type: string
+        default: "200"
+  schedule:
+    # Saturdays at 03:00 UTC (refresh data + retrain)
+    - cron: "0 3 * * 6"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[prices,gbt]"
+      - name: Pipeline (ingest → build → walk-forward → backtest)
+        env:
+          AFP_LIMIT_CIKS: ${{ inputs.limit_ciks || '200' }}
+          AFP_MODEL_KIND: ${{ inputs.model_kind || 'ridge' }}
+        run: |
+          afp ingest-sec --limit-ciks "$AFP_LIMIT_CIKS"
+          afp ingest-prices --limit "$AFP_LIMIT_CIKS"
+          afp build-dataset
+          afp walk-forward --model-kind "$AFP_MODEL_KIND" \
+              --out artifacts/predictions/walk_${AFP_MODEL_KIND}.parquet
+          afp backtest --predictions "artifacts/predictions/walk_${AFP_MODEL_KIND}.parquet" \
+              --portfolio-id "walk_${AFP_MODEL_KIND}"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: walk-forward-${{ github.run_id }}
+          path: |
+            artifacts/predictions/
+            reports/backtest/

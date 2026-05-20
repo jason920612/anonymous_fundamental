@@ -1,0 +1,48 @@
+features:
+  mapping_version: v1
+  periods_back: 8
+  min_company_count: 100
+  min_sample_coverage_pct: 1.0
+  max_missing_pct: 99.0
+
+  # Phase 14: anonymous derived per-feature time-series transforms.
+  # YoY = value[offset 0] - value[offset yoy_lookback]
+  # z   = (value[offset 0] - mean over P) / std over P
+  derived:
+    enabled: false
+    yoy_lookback: 4
+
+  value_transform:
+    method: signed_log
+    robust_scale: true
+    clip_min: -10
+    clip_max: 10
+    epsilon: 1.0e-6
+
+  missing_values:
+    value_when_missing: 0.0
+    include_missing_flag: true
+
+  metadata:
+    include_period_offset: true
+    include_fiscal_period_index: true
+    include_filing_delay_days: true
+    include_months_since_period_end: true
+    include_company_id_embedding: false
+    include_sector_id_in_model: false
+    filing_delay_days_clip: [0, 180]
+    months_since_period_end_clip: [0, 24]
+
+  forbidden_model_input_substrings:
+    - Revenue
+    - Income
+    - Asset
+    - Liability
+    - Cash
+    - Debt
+    - Equity
+    - EPS
+    - Margin
+    - ROE
+    - ROA
+    - Earnings

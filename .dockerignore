@@ -1,0 +1,16 @@
+.git
+.gitignore
+data/raw
+data/processed
+data/model_inputs
+data/feature_store
+artifacts
+reports
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache
+.ruff_cache
+*.egg-info

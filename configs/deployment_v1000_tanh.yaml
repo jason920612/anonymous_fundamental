@@ -1,0 +1,57 @@
+# Phase 17 ablation: keep filter + derived + weighting + sector, but tanh target.
+
+includes:
+  - default.yaml
+
+data:
+  sample_filter:
+    enabled: true
+    min_adjusted_close_price_usd: 5.0
+    min_avg_daily_dollar_volume_usd: 10000000.0
+    min_years_price_history: 3.0
+    avg_dollar_volume_lookback_days: 252
+
+features:
+  periods_back: 8
+  min_company_count: 30
+  min_sample_coverage_pct: 1.0
+  max_missing_pct: 99.0
+  derived:
+    enabled: true
+    yoy_lookback: 4
+
+target:
+  k: 2.5
+  target_mode: tanh_scaled              # back to RFC-04 default
+  scale:
+    method: hybrid_daily_event
+    daily_vol_lookback_days: 252
+    event_vol_lookback_events: 8
+    min_event_history: 4
+
+model:
+  type: lightgbm
+  splits:
+    train_end_date: "2015-12-31"
+    validation_end_date: "2019-12-31"
+    test_start_date: "2020-01-01"
+  sample_weighting:
+    by_company: true
+    by_quarter: true
+
+backtest:
+  start_date: "2020-01-02"
+  end_date: null
+
+portfolio:
+  signal:
+    min_positive_signal: 0.05
+  positions:
+    min_positions: 20
+    target_positions: 50
+    max_positions: 100
+    max_single_stock_weight: 0.05
+    min_position_weight: 0.0025
+  sector:
+    use_sector_caps: true
+    max_sector_weight: 0.30

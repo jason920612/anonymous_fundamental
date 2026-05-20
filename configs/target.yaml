@@ -1,0 +1,25 @@
+target:
+  return_type: log
+  transform: tanh
+  k: 2.5
+
+  # Phase 13: tanh_scaled (default, RFC-04) | cross_sectional_rank
+  target_mode: tanh_scaled
+  rank_period: Q
+
+  scale:
+    method: hybrid_daily_event
+    daily_vol_lookback_days: 252
+    event_vol_lookback_events: 8
+    min_event_history: 4
+    daily_weight: 0.7
+    event_weight: 0.3
+    min_ex_ante_scale: 0.02
+    max_ex_ante_scale: 1.00
+
+  restore:
+    method: atanh
+    clip_abs: 0.99
+
+  diagnostics:
+    extreme_threshold_scale_multiple: 3.0

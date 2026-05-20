@@ -1,0 +1,78 @@
+services:
+  afp-ingest-sec:
+    build: .
+    image: afp:latest
+    command: ["ingest-sec", "--config", "configs/default.yaml", "--limit-ciks", "${AFP_LIMIT_CIKS:-50}"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+
+  afp-ingest-prices:
+    image: afp:latest
+    command: ["ingest-prices", "--config", "configs/default.yaml", "--limit", "${AFP_LIMIT_CIKS:-50}"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    depends_on:
+      afp-ingest-sec:
+        condition: service_completed_successfully
+
+  afp-build:
+    image: afp:latest
+    command: ["build-dataset", "--config", "configs/default.yaml"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    depends_on:
+      afp-ingest-prices:
+        condition: service_completed_successfully
+
+  afp-train:
+    image: afp:latest
+    command: ["train", "--config", "configs/default.yaml",
+              "--model-kind", "${AFP_MODEL_KIND:-ridge}",
+              "--model-id", "${AFP_MODEL_ID:-ridge_v001}"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    depends_on:
+      afp-build:
+        condition: service_completed_successfully
+
+  afp-backtest:
+    image: afp:latest
+    command: ["backtest", "--config", "configs/default.yaml",
+              "--predictions", "artifacts/predictions/${AFP_MODEL_ID:-ridge_v001}.parquet",
+              "--portfolio-id", "${AFP_MODEL_ID:-ridge_v001}"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    depends_on:
+      afp-train:
+        condition: service_completed_successfully
+
+  afp-walk-forward:
+    image: afp:latest
+    command: ["walk-forward", "--config", "configs/default.yaml",
+              "--model-kind", "${AFP_MODEL_KIND:-ridge}",
+              "--frequency", "QS",
+              "--out", "artifacts/predictions/walk_${AFP_MODEL_ID:-ridge_v001}.parquet"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    depends_on:
+      afp-build:
+        condition: service_completed_successfully
+    profiles: ["walk-forward"]

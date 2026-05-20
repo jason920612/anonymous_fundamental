@@ -1,0 +1,38 @@
+model:
+  type: ridge        # one of: constant_zero, historical_mean, ridge, lightgbm, hist_gbt
+  random_seed: 42
+
+  # Phase 15: inverse-frequency sample weighting
+  sample_weighting:
+    by_company: false   # downweight names with many filings (AAPL has 100+)
+    by_quarter: false   # rebalance across calendar quarters
+
+  splits:
+    train_end_date: "2015-12-31"
+    validation_end_date: "2019-12-31"
+    test_start_date: "2020-01-01"
+
+  ridge:
+    alpha_grid: [0.1, 1.0, 10.0, 100.0]
+
+  hist_gbt:
+    loss: squared_error
+    learning_rate: 0.05
+    max_iter: 500
+    max_depth: 6
+    min_samples_leaf: 50
+    l2_regularization: 1.0
+
+  lightgbm:
+    objective: regression
+    n_estimators: 2000
+    learning_rate: 0.02
+    num_leaves: 63
+    min_data_in_leaf: 100
+    subsample: 0.9
+    colsample_bytree: 0.8
+    early_stopping_rounds: 100
+
+  predict:
+    clip_min: -1.0
+    clip_max: 1.0

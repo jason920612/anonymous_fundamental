@@ -1,0 +1,37 @@
+# H2/P28: sector-neutral rank target.
+# Same encoder + Ridge as the leader, but target is pct_rank within (quarter, sector).
+
+includes:
+  - default.yaml
+
+features:
+  periods_back: 8
+  min_company_count: 50
+  min_sample_coverage_pct: 1.0
+  max_missing_pct: 99.0
+
+target:
+  k: 2.5
+  target_mode: sector_neutral_rank
+  rank_period: Q
+
+model:
+  type: ridge
+  splits:
+    train_end_date: "2015-12-31"
+    validation_end_date: "2019-12-31"
+    test_start_date: "2020-01-01"
+
+backtest:
+  start_date: "2020-01-02"
+  end_date: null
+
+portfolio:
+  signal:
+    min_positive_signal: 0.05
+  positions:
+    min_positions: 20
+    target_positions: 50
+    max_positions: 100
+    max_single_stock_weight: 0.05
+    min_position_weight: 0.0025
