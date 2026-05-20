@@ -545,11 +545,26 @@ def _print_one(r: pd.Series):
 
 
 def _confidence_label(pct: float) -> str:
-    if pct >= 0.85 or pct <= 0.15:
+    """Five-tier asymmetric label based on cohort ranking position.
+
+    All tiers reflect rank position — never a "high-confidence short"
+    interpretation, since the strategy is long-only.
+
+      ≥85th pct  →  high          (top 15%, strong long candidate)
+      70-85th    →  moderate      (top 30%, plausible long)
+      30-70th    →  neutral       (middle 40%, no clear thesis)
+      15-30th    →  moderate-avoid (bottom 30%, weak fundamentals vs peers)
+       <15th    →  avoid          (bottom 15%, clear under-performer in cohort)
+    """
+    if pct >= 0.85:
         return "high"
-    if pct >= 0.70 or pct <= 0.30:
+    if pct >= 0.70:
         return "moderate"
-    return "low"
+    if pct >= 0.30:
+        return "neutral"
+    if pct >= 0.15:
+        return "moderate-avoid"
+    return "avoid"
 
 
 def _print_multi(df: pd.DataFrame):

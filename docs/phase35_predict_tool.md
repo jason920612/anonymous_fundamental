@@ -83,6 +83,25 @@ Suggested long-only portfolio (top 3 positive signals, inverse-vol weighted):
 `--top-n N` additionally prints an inverse-vol weighted long-only
 portfolio of the top N positive-signal names.
 
+### Confidence label (5-tier, rank-only)
+
+The `Confidence` field in single-ticker output is a direct read of the
+ticker's percentile vs the reference cohort. It is **strictly one-sided**:
+the labels reflect rank position, not a "high-confidence short"
+interpretation, because the strategy is long-only.
+
+| Percentile | Label | Meaning |
+|---|---|---|
+| ≥ 85 (top 15%) | `high` | strong long candidate |
+| 70 – 85 (top 30% excl. top 15%) | `moderate` | plausible long |
+| 30 – 70 (middle 40%) | `neutral` | no clear thesis |
+| 15 – 30 (bottom 30% excl. bottom 15%) | `moderate-avoid` | weak fundamentals vs peers |
+| < 15 (bottom 15%) | `avoid` | clear under-performer in cohort |
+
+A bottom-bucket name (`avoid`) does NOT carry a short signal — it just
+means "do not buy". Acting on it as a short would be outside the
+calibrated regime of the model.
+
 ### Reference Cohort
 
 A single ticker would trivially rank at the 50th percentile if compared
