@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from afp.cli import backtest, build_dataset, ingest_prices, ingest_sec, run_pipeline, train
-from afp.cli import build_sectors, diagnostics, ensemble, finalize, walk_forward
+from afp.cli import build_sectors, diagnostics, ensemble, finalize, predict, walk_forward
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_subparser(sub)
     build_sectors.add_subparser(sub)
     ensemble.add_subparser(sub)
+    predict.add_subparser(sub)
     return parser
 
 

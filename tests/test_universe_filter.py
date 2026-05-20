@@ -29,7 +29,14 @@ def _make_prices(icid: str, dates: pd.DatetimeIndex, base_price: float, volume: 
 def world():
     dates = pd.bdate_range("2018-01-02", "2024-12-31")
     high_liq = _make_prices("HIGH", dates, 100.0, 5_000_000)         # passes all filters
-    low_price = _make_prices("LOW", dates, 2.0, 5_000_000)            # < $5
+    # Force LOW to stay under $5 by giving it a clear downward drift.
+    rng_low = np.random.default_rng(7)
+    log_ret_low = rng_low.normal(-0.0008, 0.005, len(dates))
+    px_low = 4.0 * np.exp(np.cumsum(log_ret_low))
+    low_price = pd.DataFrame({
+        "date": [d.date() for d in dates], "internal_company_id": "LOW",
+        "ticker_at_date": "LOW", "adjusted_close": px_low, "volume": 5_000_000,
+    })
     low_adv = _make_prices("ILLIQ", dates, 100.0, 1_000)             # ADV ~ $100K
     short_hist = _make_prices("NEW", dates[-200:], 100.0, 5_000_000) # < min history
     prices = pd.concat([high_liq, low_price, low_adv, short_hist], ignore_index=True)

@@ -19,12 +19,15 @@ dependencies = [
     "PyYAML>=6.0",
     "requests>=2.31",
     "python-dateutil>=2.8",
+    # LightGBM + yfinance are required by the production `afp predict` tool
+    # (Phase 35) — moved from optional to default so a fresh install just works.
+    "lightgbm>=4.0",
+    "yfinance>=0.2.40",
 ]
 
 [project.optional-dependencies]
-gbt = ["lightgbm>=4.0"]
+gbt-extras = ["xgboost>=2.0"]
 neural = ["torch>=2.1"]
-prices = ["yfinance>=0.2.40"]
 dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.1"]
 
 [project.scripts]
