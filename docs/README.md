@@ -32,6 +32,11 @@ milestone.
 | 24 | RFC-06 §9 | [phase24_distribution_allocator.md](phase24_distribution_allocator.md) | confidence/std-weighted long-only allocator |
 | 25 | RFC-05 §10 | [phase25_selftraining.md](phase25_selftraining.md) | reward-weighted self-training loop |
 | 26 | RFC-07 §17 | [phase26_final_leaderboard.md](phase26_final_leaderboard.md) | **final leaderboard + lessons (Sharpe 0.79)** |
+| 29 | RFC-09 §17 | [phase29_lambdarank_breakthrough.md](phase29_lambdarank_breakthrough.md) | LambdaRank pairwise loss → Sharpe 0.96 breakthrough |
+| 33 | methodology | [phase33_methodology_correction.md](phase33_methodology_correction.md) | corrected test-snooping; honest val-driven Sharpe 1.00 |
+| 34 | RFC-08 §11 | [phase34_external_universe_test.md](phase34_external_universe_test.md) | tier2 cross-universe holdout (1000 new CIKs) — Sharpe 0.99-1.03 |
+| 35 | UX | [phase35_predict_tool.md](phase35_predict_tool.md) | `afp predict TICKER` — user-facing prediction CLI |
+| 36 | UX | [phase36_cache_refresh.md](phase36_cache_refresh.md) | auto cache freshness check (SEC + yfinance) |
 
 ## Running the whole system
 

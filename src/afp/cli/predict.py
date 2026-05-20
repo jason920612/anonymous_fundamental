@@ -34,6 +34,7 @@ from afp.data.identifiers import internal_company_id, normalize_cik
 from afp.data.parse_companies import parse_company_tickers
 from afp.data.parse_companyfacts import parse_company_facts
 from afp.data.parse_submissions import parse_submissions
+from afp.data.cache_refresh import refresh_prices_for_ticker, refresh_sec_for_cik
 from afp.data.price_client_yfinance import YFinancePriceClient
 from afp.data.sec_client import PermanentSecError, SecClient
 from afp.data.trading_calendar import TradingCalendar
@@ -75,6 +76,9 @@ def add_subparser(sub):
                    help="'today' (default) anchors prediction at the latest available "
                         "trading day using today's prices/vol; 'filing' anchors at the "
                         "entry day right after the most recent filing")
+    p.add_argument("--no-refresh", action="store_true",
+                   help="Skip the SEC + price cache freshness check. Faster but may use "
+                        "stale data. Default is to verify cache is up-to-date.")
     p.set_defaults(func=run)
 
 
@@ -234,12 +238,14 @@ def run(args: argparse.Namespace) -> int:
     start_date = args.start_date
     calendar = _load_calendar(start_date, end_date)
 
-    # Step 1: per-ticker SEC + price fetch + parse
+    # Step 1: per-ticker SEC + price fetch + parse, with cache freshness check
+    refresh_enabled = not args.no_refresh
     filings_frames: list[pd.DataFrame] = []
     facts_frames: list[pd.DataFrame] = []
     price_frames: list[pd.DataFrame] = []
     resolved_tickers: list[str] = []
     missing: list[str] = []
+    refreshed_count = 0
     for t in tickers:
         row = ticker_to_row.get(t)
         if row is None:
@@ -249,7 +255,15 @@ def run(args: argparse.Namespace) -> int:
         cik = row["cik"]
         icid = row["internal_company_id"]
         try:
-            pages, facts_payload = _ensure_sec_for_cik(cik, sec)
+            if refresh_enabled:
+                pages, facts_payload, sec_refreshed = refresh_sec_for_cik(cik, sec, RAW_DIR)
+                if pages is None:
+                    missing.append(t)
+                    continue
+                if sec_refreshed:
+                    refreshed_count += 1
+            else:
+                pages, facts_payload = _ensure_sec_for_cik(cik, sec)
         except PermanentSecError as exc:
             log.warning("predict_no_sec_data", extra={"ticker": t, "cik": cik,
                                                      "status": exc.status_code})
@@ -259,9 +273,16 @@ def run(args: argparse.Namespace) -> int:
             df = parse_submissions(page, allowed_forms=("10-Q", "10-K"))
             if not df.empty:
                 filings_frames.append(df)
-        facts_frames.append(parse_company_facts(facts_payload))
+        if facts_payload is not None:
+            facts_frames.append(parse_company_facts(facts_payload))
         try:
-            px = _ensure_prices_for_ticker(t, start_date, end_date, yf)
+            if refresh_enabled:
+                px, price_refreshed = refresh_prices_for_ticker(
+                    t, yf, start_date, end_date, PRICES_CACHE)
+                if price_refreshed:
+                    refreshed_count += 1
+            else:
+                px = _ensure_prices_for_ticker(t, start_date, end_date, yf)
         except Exception as exc:
             log.warning("predict_price_fetch_failed", extra={"ticker": t, "err": str(exc)})
             missing.append(t)
@@ -274,6 +295,9 @@ def run(args: argparse.Namespace) -> int:
         px["internal_company_id"] = icid
         price_frames.append(px)
         resolved_tickers.append(t)
+    if refreshed_count:
+        log.info("predict_cache_refreshed", extra={"refresh_actions": refreshed_count,
+                                                    "tickers": len(tickers)})
 
     if not resolved_tickers:
         print("No tickers could be resolved. Check the ticker symbols.")
