@@ -37,6 +37,7 @@ milestone.
 | 34 | RFC-08 §11 | [phase34_external_universe_test.md](phase34_external_universe_test.md) | tier2 cross-universe holdout (1000 new CIKs) — Sharpe 0.99-1.03 |
 | 35 | UX | [phase35_predict_tool.md](phase35_predict_tool.md) | `afp predict TICKER` — user-facing prediction CLI |
 | 36 | UX | [phase36_cache_refresh.md](phase36_cache_refresh.md) | auto cache freshness check (SEC + yfinance) |
+| 37 | UX | [phase37_reference_cohort_refresh.md](phase37_reference_cohort_refresh.md) | auto reference-cohort refresh + staleness warnings |
 
 ## Running the whole system
 

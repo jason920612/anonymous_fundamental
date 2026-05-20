@@ -79,6 +79,10 @@ def add_subparser(sub):
     p.add_argument("--no-refresh", action="store_true",
                    help="Skip the SEC + price cache freshness check. Faster but may use "
                         "stale data. Default is to verify cache is up-to-date.")
+    p.add_argument("--refresh-cohort", action="store_true",
+                   help="Force rebuild of the reference cohort even if its quarter matches "
+                        "the latest available training-data quarter. Use after `afp ingest-sec` "
+                        "or `afp build-dataset` re-runs that added new filings.")
     p.set_defaults(func=run)
 
 
@@ -153,31 +157,66 @@ def _load_model_state():
     return booster, meta, price_stats
 
 
-def _reference_cohort_scores(booster, encoder, feature_ids, price_ids, price_stats
+def _reference_cohort_scores(booster, encoder, feature_ids, price_ids, price_stats,
+                              force_rebuild: bool = False
                               ) -> tuple[np.ndarray | None, str | None]:
     """Build a reference cohort of raw LambdaRank scores for the most recent
-    quarter in the 1000-CIK training universe. Used to rank user tickers
-    against a broad peer pool (so a single-ticker query isn't trivially 50%).
+    quarter in the training universe.
 
-    Cached at `artifacts/models/lambdarank_v3/reference_cohort.parquet`.
+    Auto-rebuilds when stale:
+      - cache's quarter is older than the latest quarter available in
+        `data/processed/event_samples.parquet`
+      - underlying samples were updated after the cache (mtime check)
+      - `force_rebuild=True`
     """
     cache = MODEL_DIR / "reference_cohort.parquet"
-    if cache.exists():
-        df = pd.read_parquet(cache)
-        return df["raw_score"].to_numpy(), str(df["quarter"].iloc[0])
-
     samples_path = Path("data/processed/event_samples.parquet")
     facts_path = Path("data/processed/financial_facts_long.parquet")
     prices_path = Path("data/processed/prices_daily.parquet")
     if not (samples_path.exists() and facts_path.exists() and prices_path.exists()):
+        # No underlying training data — fall back to cache if present, else None.
+        if cache.exists():
+            df = pd.read_parquet(cache)
+            log.warning("reference_cohort_no_training_data_using_stale_cache",
+                        extra={"quarter": str(df["quarter"].iloc[0])})
+            return df["raw_score"].to_numpy(), str(df["quarter"].iloc[0])
         return None, None
 
-    log.info("predict_building_reference_cohort")
+    # Determine what the freshest possible quarter is, cheaply.
+    entries = pd.to_datetime(pd.read_parquet(samples_path, columns=["entry_date"])["entry_date"])
+    latest_q_in_data = entries.dt.to_period("Q").max()
+    latest_q_str = str(latest_q_in_data)
+    # If the training pool itself hasn't seen new data in a while, warn the user.
+    days_since_latest_sample = (date.today() - entries.max().date()).days
+    if days_since_latest_sample > 120:
+        log.warning("reference_cohort_underlying_universe_stale",
+                    extra={"latest_sample_date": str(entries.max().date()),
+                           "days_since": int(days_since_latest_sample),
+                           "hint": "re-run `afp ingest-sec --config configs/deployment_v1000.yaml "
+                                   "--limit-ciks 1000` then `afp build-dataset` to refresh the "
+                                   "training universe"})
+
+    stale = force_rebuild
+    if not stale and cache.exists():
+        df = pd.read_parquet(cache)
+        cached_q = str(df["quarter"].iloc[0])
+        if cached_q != latest_q_str:
+            log.info("reference_cohort_stale_quarter",
+                     extra={"cached": cached_q, "available": latest_q_str})
+            stale = True
+        elif cache.stat().st_mtime < samples_path.stat().st_mtime:
+            log.info("reference_cohort_samples_newer_than_cache")
+            stale = True
+        if not stale:
+            return df["raw_score"].to_numpy(), cached_q
+
+    log.info("predict_building_reference_cohort",
+             extra={"quarter": latest_q_str,
+                    "reason": "force" if force_rebuild else "stale_or_missing"})
     samples = pd.read_parquet(samples_path).dropna(subset=["target_normalized_signal"])
     facts = pd.read_parquet(facts_path)
     prices = pd.read_parquet(prices_path)
 
-    # Most recent quarter in the training universe
     samples["entry_ts"] = pd.to_datetime(samples["entry_date"])
     last_q = samples["entry_ts"].dt.to_period("Q").max()
     cohort = samples[samples["entry_ts"].dt.to_period("Q") == last_q].copy()
@@ -380,7 +419,8 @@ def run(args: argparse.Namespace) -> int:
     # Build a reference cohort from the existing 1000-CIK universe's most recent quarter,
     # so even a single user ticker has 1000+ peers to be ranked against.
     ref_scores, ref_quarter = _reference_cohort_scores(booster, encoder, feature_ids,
-                                                       price_ids, price_stats)
+                                                       price_ids, price_stats,
+                                                       force_rebuild=args.refresh_cohort)
     if ref_scores is not None and len(ref_scores) > 0:
         log.info("predict_reference_cohort_loaded",
                  extra={"size": len(ref_scores), "quarter": ref_quarter})
