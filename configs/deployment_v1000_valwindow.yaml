@@ -1,0 +1,7 @@
+# Validation window only — for portfolio HPO without touching test.
+includes:
+  - default.yaml
+
+backtest:
+  start_date: "2016-01-04"
+  end_date: "2019-12-31"

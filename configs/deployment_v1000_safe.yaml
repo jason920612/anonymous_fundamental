@@ -1,0 +1,23 @@
+# Lower-drawdown variant: N=50, sector cap 25%, signal threshold + min positions.
+# Goal: trade some Sharpe for lower MDD and less concentration risk.
+
+includes:
+  - default.yaml
+
+features: {periods_back: 8, min_company_count: 50}
+model: {type: ridge}
+target: {k: 2.5}
+backtest: {start_date: "2020-01-02", end_date: null}
+
+portfolio:
+  signal:
+    min_positive_signal: 0.30        # only take meaningfully positive picks
+  positions:
+    min_positions: 20
+    target_positions: 50
+    max_positions: 80
+    max_single_stock_weight: 0.04
+    min_position_weight: 0.002
+  sector:
+    use_sector_caps: true
+    max_sector_weight: 0.25

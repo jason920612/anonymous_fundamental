@@ -1,0 +1,14 @@
+includes:
+  - default.yaml
+features: {periods_back: 8, min_company_count: 50}
+model: {type: ridge}
+target: {k: 2.5}
+backtest: {start_date: "2020-01-02", end_date: null}
+portfolio:
+  signal: {min_positive_signal: 0.0}
+  positions:
+    min_positions: 5
+    target_positions: 45
+    max_positions: 55
+    max_single_stock_weight: 0.05
+    min_position_weight: 0.005

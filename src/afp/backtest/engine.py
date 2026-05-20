@@ -55,9 +55,12 @@ def run_backtest(
     k: float = 2.5,
     sector_map: dict[str, str] | None = None,
     distribution_cfg=None,
+    vol_target_cfg=None,
 ) -> BacktestResult:
     risk_cfg = risk_cfg or RiskConfig()
     vol_est = VolEstimator(prices, risk_cfg)
+    vol_target_history: list[float] = []
+    vol_target_prev = 1.0
 
     start = pd.Timestamp(backtest_cfg.start_date)
     end = pd.Timestamp(backtest_cfg.end_date) if backtest_cfg.end_date else \
@@ -128,6 +131,19 @@ def run_backtest(
                                                 portfolio_cfg, k=k, sector_map=sector_map)
             target_map = dict(zip(target.weights["internal_company_id"], target.weights["weight"]))
             target_cash = target.cash_weight
+            # Phase 32: vol targeting scales the equity slice.
+            if vol_target_cfg is not None and getattr(vol_target_cfg, "enabled", False):
+                from afp.portfolio.vol_target import compute_portfolio_vol_scale
+                if len(daily_rows) > 20:
+                    past_ret = pd.Series([r["net_return"] for r in daily_rows])
+                    scale = compute_portfolio_vol_scale(past_ret, vol_target_cfg, vol_target_prev)
+                else:
+                    scale = 1.0
+                vol_target_prev = scale
+                vol_target_history.append(scale)
+                if scale != 1.0:
+                    target_map = {k_: v * scale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
 
             all_ids = set(current_weights) | set(target_map)
             for icid in all_ids:
