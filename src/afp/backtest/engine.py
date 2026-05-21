@@ -56,11 +56,27 @@ def run_backtest(
     sector_map: dict[str, str] | None = None,
     distribution_cfg=None,
     vol_target_cfg=None,
+    custom_allocator=None,
+    regime_filter_cfg=None,
+    regime_temperature_series=None,
+    vol_estimator: VolEstimator | None = None,
+    dd_target_cfg=None,
+    beta_target_cfg=None,
+    beta_market_returns: pd.Series | None = None,
+    vov_target_cfg=None,
+    gr_cfg=None,
+    kuramoto_cfg=None,
+    kuramoto_r_series=None,
 ) -> BacktestResult:
     risk_cfg = risk_cfg or RiskConfig()
-    vol_est = VolEstimator(prices, risk_cfg)
+    vol_est = vol_estimator if vol_estimator is not None else VolEstimator(prices, risk_cfg)
     vol_target_history: list[float] = []
     vol_target_prev = 1.0
+    dd_target_prev = 1.0
+    beta_target_prev = 1.0
+    vov_target_prev = 1.0
+    gr_prev = 1.0
+    kuramoto_prev = 1.0
 
     start = pd.Timestamp(backtest_cfg.start_date)
     end = pd.Timestamp(backtest_cfg.end_date) if backtest_cfg.end_date else \
@@ -116,7 +132,11 @@ def run_backtest(
         cost = 0.0
         turnover = 0.0
         if d_norm in triggers or not current_weights:
-            if distribution_cfg is not None and getattr(distribution_cfg, "_blend_mode", False):
+            if custom_allocator is not None:
+                target = custom_allocator(
+                    d.date(), predictions_with_context, vol_est,
+                    portfolio_cfg, k, sector_map)
+            elif distribution_cfg is not None and getattr(distribution_cfg, "_blend_mode", False):
                 from afp.portfolio.blended_allocator import build_blended_portfolio
                 target = build_blended_portfolio(
                     d.date(), predictions_with_context, vol_est,
@@ -131,6 +151,81 @@ def run_backtest(
                                                 portfolio_cfg, k=k, sector_map=sector_map)
             target_map = dict(zip(target.weights["internal_company_id"], target.weights["weight"]))
             target_cash = target.cash_weight
+            # Phase 39: thermodynamic regime filter — exposure scale per day.
+            if (regime_filter_cfg is not None and getattr(regime_filter_cfg, "enabled", False)
+                    and regime_temperature_series is not None):
+                from afp.portfolio.regime_filter import regime_scale_at
+                rscale = regime_scale_at(regime_temperature_series, regime_filter_cfg, d.date())
+                if rscale != 1.0:
+                    target_map = {k_: v * rscale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
+            # Phase 44: drawdown-targeting wrapper — scale equity slice by
+            # realized DD over the past `lookback_days`. Applied multiplicatively
+            # with regime filter and (below) vol target.
+            if dd_target_cfg is not None and getattr(dd_target_cfg, "enabled", False):
+                from afp.portfolio.dd_target import compute_dd_scale
+                if len(daily_rows) > 20:
+                    past_ret = pd.Series([r["net_return"] for r in daily_rows])
+                    dd_scale = compute_dd_scale(past_ret, dd_target_cfg, dd_target_prev)
+                else:
+                    dd_scale = 1.0
+                dd_target_prev = dd_scale
+                if dd_scale != 1.0:
+                    target_map = {k_: v * dd_scale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
+            # Phase 46: beta-targeting wrapper — scale by inverse rolling
+            # beta to SPY. Applied after dd_target, before vol_target.
+            if (beta_target_cfg is not None and getattr(beta_target_cfg, "enabled", False)
+                    and beta_market_returns is not None):
+                from afp.portfolio.beta_target import compute_beta_scale
+                if len(daily_rows) > 20:
+                    past_ret = pd.Series([r["net_return"] for r in daily_rows],
+                                          index=pd.to_datetime([r["date"] for r in daily_rows]))
+                    b_scale = compute_beta_scale(past_ret, beta_market_returns,
+                                                 beta_target_cfg, beta_target_prev)
+                else:
+                    b_scale = 1.0
+                beta_target_prev = b_scale
+                if b_scale != 1.0:
+                    target_map = {k_: v * b_scale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
+            # Phase 50: vol-of-vol targeting — heteroscedasticity-aware
+            # de-risking based on the strategy's own vol-of-vol z-score.
+            if vov_target_cfg is not None and getattr(vov_target_cfg, "enabled", False):
+                from afp.portfolio.vov_target import compute_vov_scale
+                if len(daily_rows) > vov_target_cfg.sigma_window + vov_target_cfg.vov_window:
+                    past_ret = pd.Series([r["net_return"] for r in daily_rows])
+                    v_scale = compute_vov_scale(past_ret, vov_target_cfg, vov_target_prev)
+                else:
+                    v_scale = 1.0
+                vov_target_prev = v_scale
+                if v_scale != 1.0:
+                    target_map = {k_: v * v_scale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
+            # Phase 60: Gutenberg-Richter foreshock detector — anomalous
+            # cluster of small drawdowns precedes large ones (geophysics).
+            if gr_cfg is not None and getattr(gr_cfg, "enabled", False):
+                from afp.portfolio.gutenberg_richter import compute_gr_scale
+                if len(daily_rows) > gr_cfg.history_window + gr_cfg.count_window:
+                    past_ret = pd.Series([r["net_return"] for r in daily_rows])
+                    g_scale = compute_gr_scale(past_ret, gr_cfg, gr_prev)
+                else:
+                    g_scale = 1.0
+                gr_prev = g_scale
+                if g_scale != 1.0:
+                    target_map = {k_: v * g_scale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
+            # Phase 61: Kuramoto synchronization order parameter — coupled
+            # oscillator phase coherence across the universe (Kuramoto 1975).
+            if (kuramoto_cfg is not None and getattr(kuramoto_cfg, "enabled", False)
+                    and kuramoto_r_series is not None):
+                from afp.portfolio.kuramoto import compute_kuramoto_scale
+                k_scale = compute_kuramoto_scale(kuramoto_r_series, kuramoto_cfg,
+                                                  pd.Timestamp(d), kuramoto_prev)
+                kuramoto_prev = k_scale
+                if k_scale != 1.0:
+                    target_map = {k_: v * k_scale for k_, v in target_map.items()}
+                    target_cash = max(0.0, 1.0 - sum(target_map.values()))
             # Phase 32: vol targeting scales the equity slice.
             if vol_target_cfg is not None and getattr(vol_target_cfg, "enabled", False):
                 from afp.portfolio.vol_target import compute_portfolio_vol_scale

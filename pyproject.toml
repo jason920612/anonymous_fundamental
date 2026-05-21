@@ -23,6 +23,9 @@ dependencies = [
     # (Phase 35) — moved from optional to default so a fresh install just works.
     "lightgbm>=4.0",
     "yfinance>=0.2.40",
+    # Phase 68: daemon needs lxml for pandas.read_html to parse the
+    # S&P 500 Wikipedia constituent table.
+    "lxml>=4.9",
 ]
 
 [project.optional-dependencies]

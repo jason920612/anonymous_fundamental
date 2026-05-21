@@ -38,16 +38,52 @@ prediction.
 ```bash
 pip install -e .
 
-# One-time setup: fetch base universe + train the LambdaRank model (~45 min)
-afp ingest-sec    --config configs/deployment_v1000.yaml --limit-ciks 1000
-afp ingest-prices --config configs/deployment_v1000.yaml --limit 1000
-afp build-dataset --config configs/deployment_v1000.yaml
-python3 scripts/save_lambdarank_model.py
+# One command: ingest + features + train + save artifacts (~45 min cold,
+# ~5-10 min on warm cache when only a few new filings have appeared)
+afp refresh-all
 
 # Then daily: just predict
 afp predict TSLA
 afp predict AAPL MSFT NVDA META TSLA --top-n 3
 afp predict --tickers-file my_watchlist.txt
+```
+
+The single `afp refresh-all` command auto-runs all seven pipeline stages
+(SEC ingest → yfinance ingest → build samples → cross-disciplinary
+features → train Phase 62 LambdaRank → save booster + metadata →
+invalidate prediction cache). It is idempotent — re-running on a fresh
+day only re-fetches stale data and skips training if no new samples
+appeared. See [docs/phase67_refresh_all.md](docs/phase67_refresh_all.md)
+for flag reference.
+
+### Daemon mode (24h watcher + Telegram bot)
+
+```bash
+afp daemon
+```
+
+On first launch the daemon interactively prompts for your Telegram bot
+token and chat IDs (press Enter to skip), saves them to
+`configs/telegram.json`, then enters its 24-hour cycle. Every cycle
+fetches the current S&P 500 constituent list, detects new earnings
+filings, retrains the Phase 62 model only when new data is present,
+and pushes a Markdown digest (new filings + top long-side ideas) to
+every subscribed chat.
+
+For non-interactive deploys (systemd, Docker, CI) use `--no-prompt`
+with either env vars (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`) or
+a pre-populated `configs/telegram.json`. To re-prompt and overwrite
+existing credentials use `--telegram-setup`.
+
+Full daemon docs: [docs/phase68_daemon_telegram.md](docs/phase68_daemon_telegram.md).
+
+If you prefer to run the stages individually:
+
+```bash
+afp ingest-sec    --config configs/deployment_v1000.yaml --limit-ciks 1000
+afp ingest-prices --config configs/deployment_v1000.yaml --limit 1000
+afp build-dataset --config configs/deployment_v1000.yaml
+python3 scripts/train_lambdarank_cross_features.py   # Phase 62 training
 ```
 
 Example output:

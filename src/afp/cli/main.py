@@ -7,6 +7,7 @@ import sys
 
 from afp.cli import backtest, build_dataset, ingest_prices, ingest_sec, run_pipeline, train
 from afp.cli import build_sectors, diagnostics, ensemble, finalize, predict, walk_forward
+from afp.cli import refresh_all, daemon
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     build_sectors.add_subparser(sub)
     ensemble.add_subparser(sub)
     predict.add_subparser(sub)
+    refresh_all.add_subparser(sub)
+    daemon.add_subparser(sub)
     return parser
 
 

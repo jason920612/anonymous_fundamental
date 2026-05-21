@@ -52,7 +52,27 @@ from afp.targets.volatility_scale import ScaleConfig, compute_ex_ante_scale_for_
 
 
 SEC_USER_AGENT = "anonymous-fundamental-portfolio research jasonya2206@gmail.com"
-MODEL_DIR = Path("artifacts/models/lambdarank_v3")
+
+
+def _resolve_model_dir() -> Path:
+    """Pick the freshest available trained-model directory.
+
+    Preference order:
+      1. `artifacts/models/lambdarank_v3_cross` — Phase 62 winner (cross-features model)
+      2. `artifacts/models/lambdarank_v3` — Phase 29 baseline (no cross features)
+    """
+    candidates = [
+        Path("artifacts/models/lambdarank_v3_cross"),
+        Path("artifacts/models/lambdarank_v3"),
+    ]
+    for c in candidates:
+        if (c / "booster.txt").exists() and (c / "metadata.json").exists():
+            return c
+    # Default fallback (will raise a clear error in _load_model_state)
+    return candidates[-1]
+
+
+MODEL_DIR = _resolve_model_dir()
 ENCODER_DIR = Path("artifacts/feature_encoder/v1")
 RAW_DIR = Path("data/raw/sec")
 PRICES_CACHE = Path("data/raw/prices_cache")
@@ -144,10 +164,10 @@ def _load_calendar(start: str, end: str) -> TradingCalendar:
 
 
 def _load_model_state():
-    if not MODEL_DIR.exists():
+    if not (MODEL_DIR / "booster.txt").exists():
         raise FileNotFoundError(
             f"Trained model not found at {MODEL_DIR}. "
-            f"Run `python3 scripts/save_lambdarank_model.py` once to create it.")
+            f"Run `afp refresh-all` to ingest data and train.")
     import lightgbm as lgb
     booster = lgb.Booster(model_file=str(MODEL_DIR / "booster.txt"))
     meta = json.loads((MODEL_DIR / "metadata.json").read_text())
@@ -155,6 +175,40 @@ def _load_model_state():
     price_stats = {fid: (float(med), float(iqr))
                    for fid, med, iqr in zip(npz["feature_ids"], npz["medians"], npz["iqrs"])}
     return booster, meta, price_stats
+
+
+def _attach_cross_features_if_needed(samples_df: pd.DataFrame, prices: pd.DataFrame,
+                                      meta: dict) -> pd.DataFrame:
+    """If the trained model uses cross-disciplinary features (Phase 62+),
+    compute them on the supplied price panel and join into the samples
+    DataFrame. Returns the samples DataFrame with the features attached
+    (or unchanged if the model doesn't use them).
+    """
+    cross_ids = meta.get("cross_feature_ids") or []
+    if not cross_ids:
+        return samples_df
+    from afp.features.cross_disciplinary_features import (
+        attach_cross_features_to_samples,
+        compute_cross_features,
+    )
+    price_pivot = (prices.assign(date=pd.to_datetime(prices["date"]))
+                         .pivot_table(index="date", columns="internal_company_id",
+                                      values="adjusted_close", aggfunc="last").ffill())
+    cross_panel = compute_cross_features(price_pivot)
+    return attach_cross_features_to_samples(samples_df, cross_panel)
+
+
+def _append_cross_features_to_X(X: np.ndarray, samples_df: pd.DataFrame,
+                                 sample_ids, meta: dict) -> np.ndarray:
+    """Append the 6 cross-disciplinary features + missing flags to X. No-op if
+    the model wasn't trained with cross features."""
+    cross_ids = meta.get("cross_feature_ids") or []
+    if not cross_ids:
+        return X
+    sub = samples_df.set_index("sample_id").reindex(sample_ids)
+    extra = sub[cross_ids].to_numpy(dtype=np.float64)
+    extra_miss = sub[[f"{c}_missing" for c in cross_ids]].to_numpy(dtype=np.float64)
+    return np.concatenate([X, extra, extra_miss], axis=1)
 
 
 def _reference_cohort_scores(booster, encoder, feature_ids, price_ids, price_stats,
@@ -225,6 +279,10 @@ def _reference_cohort_scores(booster, encoder, feature_ids, price_ids, price_sta
 
     from afp.models.datasets import build_tabular_dataset
 
+    # Phase 62: attach cross features if model expects them.
+    meta_json = json.loads((MODEL_DIR / "metadata.json").read_text())
+    cohort = _attach_cross_features_if_needed(cohort, prices, meta_json)
+
     pf_cfg = PriceFeatureConfig(enabled=True)
     pf_df, _ = compute_price_features(cohort, prices, pf_cfg)
     pf_df = transform_with_scaler(pf_df, price_ids, price_stats)
@@ -235,6 +293,7 @@ def _reference_cohort_scores(booster, encoder, feature_ids, price_ids, price_sta
     extra = pf_sub[price_ids].to_numpy(dtype=np.float64)
     extra_miss = pf_sub[[f"{fid}_missing" for fid in price_ids]].to_numpy(dtype=np.float64)
     X = np.concatenate([ds.X, extra, extra_miss], axis=1)
+    X = _append_cross_features_to_X(X, cohort, ds.sample_ids, meta_json)
     scores = booster.predict(X)
 
     cache.parent.mkdir(parents=True, exist_ok=True)
@@ -260,12 +319,64 @@ def _resolve_tickers(tickers_arg: list[str], tickers_file: str | None) -> list[s
 
 # ---------------------------------------------------------------------------
 
+def predict_tickers(tickers: list[str], *,
+                    start_date: str = "2010-01-01",
+                    end_date: str | None = None,
+                    no_refresh: bool = False,
+                    refresh_cohort: bool = False,
+                    anchor: str = "today") -> tuple[pd.DataFrame, list[str]]:
+    """Programmatic entry point — predict on a list of tickers.
+
+    Returns (predictions DataFrame sorted by predicted_signal desc,
+    missing tickers list). The DataFrame columns mirror what the CLI
+    prints / emits as JSON.
+
+    This is the function the daemon calls to score the S&P 500 each
+    cycle without going through CLI argparse / stdout.
+    """
+    args = argparse.Namespace(
+        tickers=list(tickers),
+        tickers_file=None,
+        start_date=start_date,
+        end_date=end_date,
+        no_refresh=no_refresh,
+        refresh_cohort=refresh_cohort,
+        anchor=anchor,
+        json=False,
+        top_n=None,
+    )
+    return _compute_predictions(args)
+
+
 def run(args: argparse.Namespace) -> int:
     tickers = _resolve_tickers(args.tickers, args.tickers_file)
     if not tickers:
         log.warning("predict_no_tickers_given")
         return 1
 
+    args.tickers = tickers   # so the helper sees the resolved list
+    df_out, missing = _compute_predictions(args)
+    if df_out is None:
+        # _compute_predictions emits its own diagnostic; mimic legacy return code
+        return 1
+
+    if args.json:
+        print(json.dumps({"missing": missing, "predictions": df_out.to_dict(orient="records")},
+                         indent=2, default=str))
+    else:
+        _print_table(df_out, missing)
+        if args.top_n:
+            _print_portfolio(df_out, args.top_n)
+    return 0
+
+
+def _compute_predictions(args) -> tuple[pd.DataFrame | None, list[str]]:
+    """Shared core of the predict pipeline.
+
+    Returns (predictions DataFrame, missing tickers) — DataFrame is
+    None on hard failure (no resolvable tickers, no live samples, etc.).
+    """
+    tickers = args.tickers
     log.info("predict_start", extra={"n_tickers": len(tickers)})
     ticker_map = _load_ticker_map()
     ticker_to_row = {row["ticker"]: row for _, row in ticker_map.iterrows()}
@@ -342,7 +453,7 @@ def run(args: argparse.Namespace) -> int:
         print("No tickers could be resolved. Check the ticker symbols.")
         if missing:
             print(f"Missing: {', '.join(missing)}")
-        return 1
+        return None, missing
 
     filings = pd.concat(filings_frames, ignore_index=True).drop_duplicates(
         subset=["filing_event_id"]) if filings_frames else pd.DataFrame()
@@ -363,7 +474,7 @@ def run(args: argparse.Namespace) -> int:
     if open_samples.empty:
         print(f"Could not build {args.anchor}-anchored samples — make sure each ticker has at "
               "least one 10-K/10-Q and a recent valid price.")
-        return 1
+        return None, missing
 
     # The completed-position samples are still used so ex-ante scale can use
     # prior event-to-event returns as part of the hybrid estimate.
@@ -387,7 +498,7 @@ def run(args: argparse.Namespace) -> int:
     latest = latest.dropna(subset=["ex_ante_scale"])
     if latest.empty:
         print("No open samples have a valid ex-ante scale. Need more price history.")
-        return 1
+        return None, missing
     latest["entry_date_ts"] = pd.to_datetime(latest["entry_date"])
     # Open samples don't have realized targets — give them a placeholder so the
     # downstream `build_tabular_dataset` (which drops NaN-target rows) keeps them.
@@ -398,6 +509,10 @@ def run(args: argparse.Namespace) -> int:
     encoder = AnonymousFeatureEncoder.load(str(ENCODER_DIR))
     booster, meta, price_stats = _load_model_state()
     feature_ids = encoder.artifact.feature_map.feature_ids
+
+    # Phase 62: attach cross-disciplinary market features if the trained
+    # model expects them (no-op for Phase 29 baseline models).
+    latest = _attach_cross_features_if_needed(latest, prices, meta)
 
     scaled, missing_arr, meta_arr, sample_ids = encoder.transform(latest, facts)
 
@@ -412,6 +527,7 @@ def run(args: argparse.Namespace) -> int:
     extra = pf_sub[price_ids].to_numpy(dtype=np.float64)
     extra_miss = pf_sub[[f"{fid}_missing" for fid in price_ids]].to_numpy(dtype=np.float64)
     X = np.concatenate([ds.X, extra, extra_miss], axis=1)
+    X = _append_cross_features_to_X(X, latest, ds.sample_ids, meta)
 
     # Step 4: predict — score user tickers
     raw_score = booster.predict(X)
@@ -494,15 +610,7 @@ def run(args: argparse.Namespace) -> int:
             "days_until_next_filing": int(days_until_next),
         })
     df_out = pd.DataFrame(rows).sort_values("predicted_signal", ascending=False).reset_index(drop=True)
-
-    if args.json:
-        print(json.dumps({"missing": missing, "predictions": df_out.to_dict(orient="records")},
-                         indent=2, default=str))
-    else:
-        _print_table(df_out, missing)
-        if args.top_n:
-            _print_portfolio(df_out, args.top_n)
-    return 0
+    return df_out, missing
 
 
 def _icid_to_ticker(icid: str, ticker_map: pd.DataFrame) -> str:

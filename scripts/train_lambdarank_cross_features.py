@@ -1,0 +1,168 @@
+"""Phase 62: train LambdaRank with cross-disciplinary market-state features.
+
+Augment the existing feature set (anonymous fundamentals + price features)
+with 6 market-state features derived from physics/cross-disciplinary
+ideas (Phase 39, 60, 61, 50, RMT eigenvalue). The model sees them as
+anonymous numerical inputs and decides itself whether they help ranking.
+
+Single training run, single eval. No tuning over these features.
+"""
+
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from afp.features.cross_disciplinary_features import (
+    CROSS_FEATURE_IDS,
+    attach_cross_features_to_samples,
+    compute_cross_features,
+)
+from afp.features.encoder import AnonymousFeatureEncoder
+from afp.features.price_features import (
+    PriceFeatureConfig,
+    compute_price_features,
+    fit_scaler,
+    transform_with_scaler,
+)
+from afp.models.datasets import build_tabular_dataset
+from afp.models.train import attach_prediction_context
+
+
+def main():
+    import lightgbm as lgb
+
+    samples = pd.read_parquet("data/processed/event_samples.parquet")
+    facts = pd.read_parquet("data/processed/financial_facts_long.parquet")
+    prices = pd.read_parquet("data/processed/prices_daily.parquet")
+    encoder = AnonymousFeatureEncoder.load("artifacts/feature_encoder/v1")
+
+    train = samples[samples["split"] == "train"].dropna(subset=["target_normalized_signal"])
+    val = samples[samples["split"] == "validation"].dropna(subset=["target_normalized_signal"])
+    test = samples[samples["split"] == "test"].dropna(subset=["target_normalized_signal"])
+
+    # ------- Compute cross-disciplinary features per date -------
+    print("computing cross-disciplinary features...", flush=True)
+    price_pivot = (prices.assign(date=pd.to_datetime(prices["date"]))
+                         .pivot_table(index="date", columns="internal_company_id",
+                                      values="adjusted_close", aggfunc="last").ffill())
+    import time
+    t0 = time.time()
+    cross_panel = compute_cross_features(price_pivot)
+    print(f"  cross features: {time.time()-t0:.1f}s, {len(cross_panel)} dates", flush=True)
+
+    train = attach_cross_features_to_samples(train, cross_panel)
+    val = attach_cross_features_to_samples(val, cross_panel)
+    test = attach_cross_features_to_samples(test, cross_panel)
+
+    feature_ids = encoder.artifact.feature_map.feature_ids
+    pf_cfg = PriceFeatureConfig(enabled=True)
+    pf_train, price_ids = compute_price_features(train, prices, pf_cfg)
+    pf_val, _ = compute_price_features(val, prices, pf_cfg)
+    pf_test, _ = compute_price_features(test, prices, pf_cfg)
+    stats = fit_scaler(pf_train, price_ids)
+    pf_train = transform_with_scaler(pf_train, price_ids, stats)
+    pf_val = transform_with_scaler(pf_val, price_ids, stats)
+    pf_test = transform_with_scaler(pf_test, price_ids, stats)
+
+    def _ds(samples_df, price_df, facts_to_use):
+        scaled_, missing_, meta_, sids = encoder.transform(samples_df, facts_to_use)
+        targets = samples_df.set_index("sample_id")["target_normalized_signal"]
+        base = build_tabular_dataset(scaled_, missing_, meta_, sids, targets, feature_ids)
+        # Price features
+        sub_p = price_df.set_index("sample_id").reindex(base.sample_ids)
+        extra_p = sub_p[price_ids].to_numpy(dtype=np.float64)
+        extra_pm = sub_p[[f"{fid}_missing" for fid in price_ids]].to_numpy(dtype=np.float64)
+        # Cross-disciplinary features
+        sub_c = samples_df.set_index("sample_id").reindex(base.sample_ids)
+        extra_c = sub_c[CROSS_FEATURE_IDS].to_numpy(dtype=np.float64)
+        extra_cm = sub_c[[f"{f}_missing" for f in CROSS_FEATURE_IDS]].to_numpy(dtype=np.float64)
+        base.X = np.concatenate([base.X, extra_p, extra_pm, extra_c, extra_cm], axis=1)
+        return base, samples_df.set_index("sample_id").loc[base.sample_ids].reset_index()
+
+    train_ds, train_rows = _ds(train, pf_train, facts)
+    val_ds, val_rows = _ds(val, pf_val, facts)
+    test_ds, test_rows = _ds(test, pf_test, facts)
+    print(f"feature shape with cross features: {train_ds.X.shape}", flush=True)
+
+    train_rows = train_rows.sort_values("entry_date").reset_index(drop=True)
+    val_rows = val_rows.sort_values("entry_date").reset_index(drop=True)
+    test_rows = test_rows.sort_values("entry_date").reset_index(drop=True)
+
+    def _sort(ds, rows):
+        sid_to_idx = {sid: i for i, sid in enumerate(ds.sample_ids)}
+        order = [sid_to_idx[s] for s in rows["sample_id"].to_list()]
+        return ds.X[order], np.array(rows["sample_id"].to_list())
+
+    Xtr, sid_tr = _sort(train_ds, train_rows)
+    Xva, sid_va = _sort(val_ds, val_rows)
+    Xte, sid_te = _sort(test_ds, test_rows)
+
+    def _to_label(rows):
+        q = pd.to_datetime(rows["entry_date"]).dt.to_period("Q").astype(str)
+        rk = rows.groupby(q)["raw_log_return"].rank(method="average", pct=True)
+        return (rk * 30.999).astype(int).clip(0, 30).to_numpy()
+    label_tr = _to_label(train_rows)
+    label_va = _to_label(val_rows)
+
+    def _group_sizes(rows):
+        q = pd.to_datetime(rows["entry_date"]).dt.to_period("Q").astype(str)
+        return q.groupby(q, sort=False).size().to_numpy()
+    g_tr = _group_sizes(train_rows)
+    g_va = _group_sizes(val_rows)
+
+    train_data = lgb.Dataset(Xtr, label=label_tr, group=g_tr)
+    val_data = lgb.Dataset(Xva, label=label_va, group=g_va, reference=train_data)
+    params = {
+        "objective": "lambdarank", "metric": "ndcg", "ndcg_eval_at": [10, 50],
+        "learning_rate": 0.03, "num_leaves": 31, "min_data_in_leaf": 30,
+        "feature_fraction": 0.3, "bagging_fraction": 0.8, "bagging_freq": 1,
+        "lambda_l2": 1.0, "verbosity": -1,
+        "max_position": 100, "label_gain": [pow(2, i) - 1 for i in range(31)],
+    }
+    print("training LambdaRank with cross-disciplinary features...", flush=True)
+    booster = lgb.train(params, train_data, num_boost_round=600,
+                        valid_sets=[val_data],
+                        callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)])
+
+    def _score_to_signal(scores, rows):
+        df = rows.copy()
+        df["score"] = scores
+        df["q"] = pd.to_datetime(df["entry_date"]).dt.to_period("Q").astype(str)
+        df["rk"] = df.groupby("q")["score"].rank(method="average", pct=True)
+        return (2.0 * df["rk"].to_numpy() - 1.0)
+
+    val_pred = _score_to_signal(booster.predict(Xva), val_rows)
+    test_pred = _score_to_signal(booster.predict(Xte), test_rows)
+
+    rows_out = []
+    for s, p in zip(sid_va, val_pred):
+        rows_out.append({"sample_id": s, "predicted_signal": float(p), "split": "validation"})
+    for s, p in zip(sid_te, test_pred):
+        rows_out.append({"sample_id": s, "predicted_signal": float(p), "split": "test"})
+    preds = pd.DataFrame(rows_out)
+    preds["model_id"] = "lambdarank_v3_cross_features"
+    preds["model_type"] = "lambdarank_cross"
+    preds["prediction_created_at"] = datetime.now(tz=timezone.utc).isoformat()
+    joined = attach_prediction_context(preds, samples)
+    out = Path("artifacts/predictions/lambdarank_v3_cross_features.parquet")
+    joined.to_parquet(out, index=False)
+    print(f"wrote {out} ({len(joined)} predictions)", flush=True)
+
+    # Feature importance summary
+    imp = pd.DataFrame({
+        "feature_idx": range(Xtr.shape[1]),
+        "gain": booster.feature_importance(importance_type="gain"),
+    })
+    imp = imp.sort_values("gain", ascending=False).head(30)
+    print("\ntop-30 feature gains:", flush=True)
+    print(imp.to_string(index=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()

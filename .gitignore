@@ -20,6 +20,16 @@ Thumbs.db
 .env
 .env.*
 
+# Telegram bot credentials (Phase 68) — bot_token + chat_ids are user-private
+configs/telegram.json
+
+# Claude Code internal state — never commit
+.claude/
+
+# Daemon runtime state
+data/processed/daemon_state.json
+data/processed/sp500_constituents.parquet
+
 # Data — never commit raw SEC dumps, yfinance caches, or processed parquets (too large + reproducible)
 data/raw/
 data/processed/
