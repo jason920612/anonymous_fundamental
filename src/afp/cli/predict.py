@@ -370,12 +370,51 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _check_artifacts_or_explain() -> bool:
+    """Preflight: verify the encoder + model artifacts exist. Print a
+    clear remediation hint if not. Returns True iff all required
+    artifacts are present.
+    """
+    missing: list[str] = []
+    if not (ENCODER_DIR / "metadata.json").exists():
+        missing.append(f"{ENCODER_DIR}/metadata.json (anonymous feature encoder)")
+    if not (MODEL_DIR / "booster.txt").exists():
+        missing.append(f"{MODEL_DIR}/booster.txt (trained LambdaRank model)")
+    if not Path("data/processed/event_samples.parquet").exists():
+        missing.append("data/processed/event_samples.parquet (training universe)")
+    if not missing:
+        return True
+    print()
+    print("=" * 70)
+    print("  Required artifacts missing — predict cannot proceed")
+    print("=" * 70)
+    for m in missing:
+        print(f"  ✗ {m}")
+    print()
+    print("These are built by the one-command pipeline:")
+    print()
+    print("    afp refresh-all")
+    print()
+    print("This will (cold cache ~30-45 min, warm cache ~5 min):")
+    print("  1. Ingest SEC filings + companyfacts for the top 1000 US CIKs")
+    print("  2. Fetch yfinance daily prices")
+    print("  3. Build event samples + anonymous feature encoder")
+    print("  4. Train the LambdaRank model with cross-disciplinary features")
+    print("  5. Save all artifacts so `afp predict` works immediately after.")
+    print()
+    return False
+
+
 def _compute_predictions(args) -> tuple[pd.DataFrame | None, list[str]]:
     """Shared core of the predict pipeline.
 
     Returns (predictions DataFrame, missing tickers) — DataFrame is
-    None on hard failure (no resolvable tickers, no live samples, etc.).
+    None on hard failure (no resolvable tickers, no live samples,
+    missing artifacts, etc.).
     """
+    if not _check_artifacts_or_explain():
+        return None, []
+
     tickers = args.tickers
     log.info("predict_start", extra={"n_tickers": len(tickers)})
     ticker_map = _load_ticker_map()
