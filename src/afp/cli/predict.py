@@ -374,33 +374,58 @@ def _check_artifacts_or_explain() -> bool:
     """Preflight: verify the encoder + model artifacts exist. Print a
     clear remediation hint if not. Returns True iff all required
     artifacts are present.
+
+    All paths are resolved RELATIVE TO THE CURRENT WORKING DIRECTORY.
+    If you `pip install -e .` and then `afp predict` from a different
+    directory than the project root, these paths will not be found —
+    the error message includes the absolute paths the predict CLI is
+    actually looking at so you can diagnose.
     """
-    missing: list[str] = []
-    if not (ENCODER_DIR / "metadata.json").exists():
-        missing.append(f"{ENCODER_DIR}/metadata.json (anonymous feature encoder)")
-    if not (MODEL_DIR / "booster.txt").exists():
-        missing.append(f"{MODEL_DIR}/booster.txt (trained LambdaRank model)")
-    if not Path("data/processed/event_samples.parquet").exists():
-        missing.append("data/processed/event_samples.parquet (training universe)")
-    if not missing:
+    import os
+
+    encoder_meta = ENCODER_DIR / "metadata.json"
+    booster_v3_cross = Path("artifacts/models/lambdarank_v3_cross") / "booster.txt"
+    booster_v3 = Path("artifacts/models/lambdarank_v3") / "booster.txt"
+    samples = Path("data/processed/event_samples.parquet")
+
+    encoder_ok = encoder_meta.exists()
+    # Accept either model location — predict CLI auto-discovers
+    booster_ok = booster_v3_cross.exists() or booster_v3.exists()
+    samples_ok = samples.exists()
+
+    if encoder_ok and booster_ok and samples_ok:
         return True
+
+    cwd = Path(os.getcwd())
     print()
     print("=" * 70)
     print("  Required artifacts missing — predict cannot proceed")
     print("=" * 70)
-    for m in missing:
-        print(f"  ✗ {m}")
+    print(f"  current working directory: {cwd}")
     print()
-    print("These are built by the one-command pipeline:")
+    print("  Looked for (all paths relative to cwd above):")
+
+    def _row(label: str, p: Path, ok: bool):
+        mark = "✓" if ok else "✗"
+        abs_p = (cwd / p).resolve() if not p.is_absolute() else p.resolve()
+        print(f"    {mark} {p}     →     {abs_p}     ({'found' if ok else 'MISSING'})")
+        print(f"        ({label})")
+
+    _row("anonymous feature encoder", encoder_meta, encoder_ok)
+    _row("trained model (cross-features)", booster_v3_cross, booster_v3_cross.exists())
+    _row("trained model (legacy)", booster_v3, booster_v3.exists())
+    _row("training universe samples", samples, samples_ok)
     print()
-    print("    afp refresh-all")
+    if not (encoder_ok and booster_ok and samples_ok):
+        print("  → If these absolute paths look wrong, you are running `afp predict`")
+        print("    from a directory that is NOT the project root. Either `cd` into")
+        print("    the project root first, OR build the artifacts via:")
     print()
-    print("This will (cold cache ~30-45 min, warm cache ~5 min):")
-    print("  1. Ingest SEC filings + companyfacts for the top 1000 US CIKs")
-    print("  2. Fetch yfinance daily prices")
-    print("  3. Build event samples + anonymous feature encoder")
-    print("  4. Train the LambdaRank model with cross-disciplinary features")
-    print("  5. Save all artifacts so `afp predict` works immediately after.")
+    print("        afp refresh-all")
+    print()
+    print("    (cold cache ~30-45 min, warm cache ~5 min: ingests SEC + yfinance,")
+    print("    builds event_samples + the encoder, trains the LambdaRank model,")
+    print("    saves all artifacts so `afp predict` works immediately after.)")
     print()
     return False
 
