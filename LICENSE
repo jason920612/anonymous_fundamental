@@ -1,0 +1,105 @@
+Proprietary License — All Rights Reserved
+==========================================
+
+Copyright (c) 2026 Jason. All rights reserved.
+
+Project: anonymous-fundamental-portfolio
+Repository: https://github.com/jason920612/anonymous_fundamental
+
+1. Ownership
+
+   The author named above ("the Owner") is the sole copyright holder of
+   this software, its source code, models, trained artifacts, configuration
+   files, documentation, research findings, and all derivative outputs
+   (collectively, "the Work").
+
+2. Restrictions
+
+   Without the Owner's prior written permission, NO PERSON OR ENTITY may:
+
+   (a) copy, reproduce, mirror, fork, or redistribute the Work, in whole
+       or in part, in any form;
+   (b) modify, adapt, translate, or create derivative works of the Work;
+   (c) use the Work, or any portion of it, for commercial purposes,
+       including but not limited to live trading, providing paid
+       services, training other models on the Work's outputs, or
+       incorporating the Work into a product or service;
+   (d) reverse-engineer, decompile, or attempt to extract the trained
+       model artifacts or research methodology from the Work;
+   (e) sublicense, sell, lend, lease, or transfer the Work to any third
+       party.
+
+3. Permitted Personal Use
+
+   Viewing the source code on the public repository for personal,
+   non-commercial study is permitted. No other rights are granted by
+   such viewing.
+
+4. Compensation for Unauthorized Use
+
+   Any use, copying, reproduction, modification, or distribution of the
+   Work in violation of Section 2 entitles the Owner, at the Owner's
+   sole discretion, to:
+
+   (a) demand immediate cessation of such use;
+   (b) demand monetary compensation reflecting the economic benefit the
+       infringing party has obtained or sought to obtain from the
+       unauthorized use;
+   (c) pursue all other remedies available under applicable copyright,
+       trade-secret, and intellectual-property laws.
+
+   The Owner reserves the right to assess and quantify such compensation
+   based on the scope of the infringement (e.g., assets under management,
+   revenue derived, period of unauthorized use).
+
+5. No Warranty
+
+   THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT
+   SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE WORK OR ITS USE.
+
+6. Financial Disclaimer
+
+   The Work performs quantitative analysis on publicly available financial
+   data. Nothing in the Work constitutes financial, investment, tax, or
+   legal advice. Any use of the Work's outputs in real markets is
+   undertaken solely at the user's own risk.
+
+7. Severability
+
+   If any provision of this license is found unenforceable, the remaining
+   provisions shall remain in full force and effect.
+
+8. Contact
+
+   For licensing inquiries, commercial-use requests, or permission grants,
+   contact the Owner via the GitHub repository above.
+
+---
+
+中文摘要（非法律約束版本，以英文版為準）
+==========================================
+
+版權所有 © 2026 Jason. 保留一切權利。
+
+本項目的所有原始碼、訓練模型、配置檔、文件、研究成果與衍生輸出皆為作者
+私有財產。未經作者書面授權，任何人不得：
+
+  • 複製、轉發、鏡像、fork 或重新散布
+  • 修改、改編或製作衍生作品
+  • 用於任何商業用途（包含實盤交易、付費服務、用本項目輸出訓練他人模型）
+  • 反向工程或擷取訓練好的模型
+  • 再授權、轉售或轉移給第三方
+
+任何違反上述限制的行為，作者保留下列權利：
+
+  • 要求立即停止使用
+  • 依違反者實際或預期取得的經濟利益主張賠償金額
+  • 行使所有著作權法、營業秘密法、智慧財產法下的其他救濟
+
+僅允許在公開 repository 上瀏覽原始碼作個人非商業性研究。
+
+本項目「按現狀」提供，作者不對任何使用結果承擔責任，亦不構成投資建議。
