@@ -568,7 +568,8 @@ def _compute_predictions(args) -> tuple[pd.DataFrame | None, list[str]]:
     cadence_days: dict[str, int] = {}
     if not filings.empty:
         for icid, grp in filings.groupby("internal_company_id"):
-            dates_ = pd.to_datetime(grp["accepted_datetime"]).dt.date.dropna().sort_values()
+            dates_ = pd.to_datetime(grp["accepted_datetime"], format="ISO8601",
+                                     errors="coerce").dt.date.dropna().sort_values()
             if len(dates_) >= 2:
                 gaps = np.diff(dates_.to_numpy()).astype("timedelta64[D]").astype(int)
                 cadence_days[icid] = int(np.median(gaps))
